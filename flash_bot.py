@@ -1,17 +1,14 @@
-
 import os
 import io
 import asyncio
 import discord
 from discord.ext import commands
-from dotenv import load_dotenv
 from collections import OrderedDict
 
-load_dotenv()
-
-TOKEN = os.getenv("DISCORD_TOKEN")
-FLASH_CHANNEL_ID = int(os.getenv("FLASH_CHANNEL_ID"))
-FLASH_PING_ROLE_ID = int(os.getenv("FLASH_PING_ROLE_ID"))
+# Load environment variables directly from Render
+TOKEN = os.environ["DISCORD_TOKEN"]
+FLASH_CHANNEL_ID = int(os.environ["FLASH_CHANNEL_ID"])
+FLASH_PING_ROLE_ID = int(os.environ["FLASH_PING_ROLE_ID"])
 
 # Allowed image file extensions
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
@@ -53,7 +50,7 @@ async def enforce_spoiler_with_webhook(message: discord.Message):
         # Delete original
         await message.delete()
 
-        # Reupload via webhook as original sender
+        # Reupload via webhook under sender's name/avatar
         await webhook.send(
             content=message.content or None,
             username=message.author.display_name,
@@ -126,9 +123,13 @@ async def on_message(message: discord.Message):
             batches[latest_batch_id]["messages"].append(message)
 
 
-# Debug command to show active batches
+# Admin-only debug command to show active batches
 @bot.command(name="showbatches")
 async def show_batches(ctx):
+    if not ctx.author.guild_permissions.administrator:
+        await ctx.send("❌ You do not have permission to use this command.")
+        return
+
     if not batches:
         await ctx.send("📭 No active batches.")
         return
@@ -145,4 +146,3 @@ async def show_batches(ctx):
 
 
 bot.run(TOKEN)
-
