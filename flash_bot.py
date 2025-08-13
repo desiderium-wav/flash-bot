@@ -10,8 +10,12 @@ TOKEN = os.environ["DISCORD_TOKEN"]
 FLASH_CHANNEL_ID = int(os.environ["FLASH_CHANNEL_ID"])
 FLASH_PING_ROLE_ID = int(os.environ["FLASH_PING_ROLE_ID"])
 
-# Allowed image file extensions
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+MEDIA_EXTENSIONS = {
+    # Images
+    ".jpg", ".jpeg", ".png", ".gif", ".webp",
+    # Videos
+    ".mp4", ".mov", ".avi", ".mkv", ".webm"
+}
 
 intents = discord.Intents.default()
 intents.messages = True
@@ -24,33 +28,31 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # Active batches stored in order of creation: batch_id -> {start_message, messages}
 batches = OrderedDict()
 
-def is_image_attachment(attachment: discord.Attachment):
-    """Check if an attachment is an image based on its file extension."""
+def is_media_attachment(attachment: discord.Attachment):
+    """Check if an attachment is an image or video based on its file extension."""
     filename = attachment.filename.lower()
-    return any(filename.endswith(ext) for ext in IMAGE_EXTENSIONS)
+    return any(filename.endswith(ext) for ext in MEDIA_EXTENSIONS)
 
 
-async def enforce_spoiler_with_webhook(message: discord.Message):
-    """Only reupload images if they are not already marked as spoilers."""
-    image_attachments = [att for att in message.attachments if is_image_attachment(att)]
-    if not image_attachments:
-        return message  # No image, nothing to do
-
-    # Check if all images already have spoilers
-    all_spoilers = all(att.is_spoiler() for att in image_attachments)
+async def enforce_spoiler_with_webhook(message: discord.Message, media_attachments):
+    """
+    Only reupload attachments if they are not already marked as spoilers.
+    Works for both images and videos.
+    """
+    # Check if all attachments are already spoilers
+    all_spoilers = all(att.is_spoiler() for att in media_attachments)
     if all_spoilers:
         return message  # Already spoilered, do nothing
 
-    # Proceed to reupload via webhook
     channel = message.channel
     webhook = await channel.create_webhook(name="FlashSpoilerBot")
 
     try:
         files = []
-        for attachment in image_attachments:
-            img_bytes = await attachment.read()
+        for attachment in media_attachments:
+            file_bytes = await attachment.read()
             spoiler_filename = f"SPOILER_{attachment.filename}" if not attachment.is_spoiler() else attachment.filename
-            files.append(discord.File(io.BytesIO(img_bytes), filename=spoiler_filename))
+            files.append(discord.File(io.BytesIO(file_bytes), filename=spoiler_filename))
 
         await message.delete()
         await webhook.send(
@@ -65,6 +67,7 @@ async def enforce_spoiler_with_webhook(message: discord.Message):
 
     finally:
         await webhook.delete()
+
 
 
 async def start_flash_timer(batch_id: int):
@@ -97,10 +100,11 @@ async def on_message(message: discord.Message):
     if message.channel.id != FLASH_CHANNEL_ID:
         return
 
-    image_attachments = [att for att in message.attachments if is_image_attachment(att)]
+    # Check for media attachments (images/videos)
+    media_attachments = [att for att in message.attachments if is_media_attachment(att)]
 
-    if image_attachments:
-        new_message = await enforce_spoiler_with_webhook(message)
+    if media_attachments:
+        new_message = await enforce_spoiler_with_webhook(message, media_attachments)
         if not new_message:
             return
 
@@ -123,11 +127,13 @@ async def on_message(message: discord.Message):
         bot.loop.create_task(start_flash_timer(batch_id))
 
     else:
+        # Treat text-only, emoji-only, and sticker messages the same
         if not batches:
             await message.delete()
         else:
             latest_batch_id = next(reversed(batches))
             batches[latest_batch_id]["messages"].append(message)
+
 
 # Admin-only debug command to show active batches
 @bot.command(name="showbatches")
