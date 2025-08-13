@@ -24,6 +24,11 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # Active batches stored in order of creation: batch_id -> {start_message, messages}
 batches = OrderedDict()
 
+def is_image_attachment(attachment: discord.Attachment):
+    """Check if an attachment is an image based on its file extension."""
+    filename = attachment.filename.lower()
+    return any(filename.endswith(ext) for ext in IMAGE_EXTENSIONS)
+
 
 async def enforce_spoiler_with_webhook(message: discord.Message):
     """Only reupload images if they are not already marked as spoilers."""
