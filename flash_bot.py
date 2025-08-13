@@ -25,18 +25,18 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 batches = OrderedDict()
 
 
-def is_image_attachment(attachment: discord.Attachment):
-    """Check if an attachment is an image based on its file extension."""
-    filename = attachment.filename.lower()
-    return any(filename.endswith(ext) for ext in IMAGE_EXTENSIONS)
-
-
 async def enforce_spoiler_with_webhook(message: discord.Message):
-    """Ensure all image attachments are spoilered by reuploading via webhook."""
+    """Only reupload images if they are not already marked as spoilers."""
     image_attachments = [att for att in message.attachments if is_image_attachment(att)]
     if not image_attachments:
         return message  # No image, nothing to do
 
+    # Check if all images already have spoilers
+    all_spoilers = all(att.is_spoiler() for att in image_attachments)
+    if all_spoilers:
+        return message  # Already spoilered, do nothing
+
+    # Proceed to reupload via webhook
     channel = message.channel
     webhook = await channel.create_webhook(name="FlashSpoilerBot")
 
@@ -47,10 +47,7 @@ async def enforce_spoiler_with_webhook(message: discord.Message):
             spoiler_filename = f"SPOILER_{attachment.filename}" if not attachment.is_spoiler() else attachment.filename
             files.append(discord.File(io.BytesIO(img_bytes), filename=spoiler_filename))
 
-        # Delete original
         await message.delete()
-
-        # Reupload via webhook under sender's name/avatar
         await webhook.send(
             content=message.content or None,
             username=message.author.display_name,
@@ -58,7 +55,6 @@ async def enforce_spoiler_with_webhook(message: discord.Message):
             files=files
         )
 
-        # Get the reuploaded message
         history = [m async for m in channel.history(limit=1)]
         return history[0] if history else None
 
@@ -103,15 +99,21 @@ async def on_message(message: discord.Message):
         if not new_message:
             return
 
+        # Send Flash Ping and store the ping message in the batch
         flash_ping_role = message.guild.get_role(FLASH_PING_ROLE_ID)
+        ping_message = None
         if flash_ping_role:
-            await message.channel.send(f"{flash_ping_role.mention}")
+            ping_message = await message.channel.send(f"{flash_ping_role.mention}")
 
+        # Create new batch
         batch_id = new_message.id
         batches[batch_id] = {
             "start_message": new_message,
-            "messages": [new_message]
+            "messages": [new_message],
         }
+
+        if ping_message:
+            batches[batch_id]["messages"].append(ping_message)
 
         bot.loop.create_task(start_flash_timer(batch_id))
 
@@ -121,7 +123,6 @@ async def on_message(message: discord.Message):
         else:
             latest_batch_id = next(reversed(batches))
             batches[latest_batch_id]["messages"].append(message)
-
 
 # Admin-only debug command to show active batches
 @bot.command(name="showbatches")
